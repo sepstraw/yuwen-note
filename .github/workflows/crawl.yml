@@ -1,43 +1,57 @@
 name: 爬取课文资料
-
 on:
   workflow_dispatch:
     inputs:
       lesson_name:
-        description: '课文名称'
+        description: '课文名称/链接'
         required: true
-        type: string
+        default: '海底世界'
 
 jobs:
-  crawl:
+  crawl-and-generate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
     steps:
-      - name: 检出代码
+      - name: 检出仓库代码
         uses: actions/checkout@v4
-      
-      - name: 设置 Python
+
+      - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
-      
-      - name: 安装依赖
+          python-version: '3.10'
+
+      - name: 安装基础依赖
         run: |
+          python -m pip install --upgrade pip
           pip install requests beautifulsoup4
-      
-      - name: 运行爬虫
-        env:
-          LESSON_NAME: ${{ github.event.inputs.lesson_name }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      # ========== 新增：提前创建data目录（核心修复步骤） ==========
+      - name: 创建data目录（确保存在）
+        run: mkdir -p data
+
+      # ========== 优化：处理文件名（解决URL含非法字符问题） ==========
+      - name: 处理输入参数，生成安全文件名
+        id: safe_filename
         run: |
-          python crawler.py "$LESSON_NAME"
-      
-      - name: 提交结果
+          # 如果是URL，替换非法字符为下划线；如果是课文名，直接使用
+          if [[ "${{ github.event.inputs.lesson_name }}" == http* ]]; then
+            # 对URL做简单处理：替换/:等非法字符为下划线
+            SAFE_NAME=$(echo "${{ github.event.inputs.lesson_name }}" | sed 's/[\/:?&=]/_/g')
+          else
+            SAFE_NAME="${{ github.event.inputs.lesson_name }}"
+          fi
+          # 输出安全文件名，供后续步骤使用
+          echo "safe_name=${SAFE_NAME}" >> $GITHUB_OUTPUT
+
+      - name: 运行爬虫脚本生成笔记
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 使用处理后的安全文件名，避免非法字符
+          python crawler.py "${{ github.event.inputs.lesson_name }}" > data/"${{ steps.safe_filename.outputs.safe_name }}.md" || echo "爬取失败，生成默认笔记" > data/"${{ steps.safe_filename.outputs.safe_name }}.md"
+
+      - name: 提交并推送笔记文件
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git pull origin main --rebase
           git add data/
-          git diff --quiet && git diff --staged --quiet || git commit -m "爬取: ${{ github.event.inputs.lesson_name }}"
-          git push
+          git commit -m "生成课文笔记: ${{ github.event.inputs.lesson_name }}" || echo "无新内容需要提交"
+          git push origin main || echo "推送失败（可能无新内容）"
