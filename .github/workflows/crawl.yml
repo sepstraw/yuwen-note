@@ -13,6 +13,9 @@ jobs:
     steps:
       - name: 检出仓库代码
         uses: actions/checkout@v4
+        # 关键：拉取完整历史，避免推送权限问题
+        with:
+          fetch-depth: 0
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v5
@@ -24,34 +27,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4
 
-      # ========== 新增：提前创建data目录（核心修复步骤） ==========
       - name: 创建data目录（确保存在）
         run: mkdir -p data
 
-      # ========== 优化：处理文件名（解决URL含非法字符问题） ==========
       - name: 处理输入参数，生成安全文件名
         id: safe_filename
         run: |
-          # 如果是URL，替换非法字符为下划线；如果是课文名，直接使用
           if [[ "${{ github.event.inputs.lesson_name }}" == http* ]]; then
-            # 对URL做简单处理：替换/:等非法字符为下划线
             SAFE_NAME=$(echo "${{ github.event.inputs.lesson_name }}" | sed 's/[\/:?&=]/_/g')
           else
             SAFE_NAME="${{ github.event.inputs.lesson_name }}"
           fi
-          # 输出安全文件名，供后续步骤使用
           echo "safe_name=${SAFE_NAME}" >> $GITHUB_OUTPUT
 
       - name: 运行爬虫脚本生成笔记
         run: |
-          # 使用处理后的安全文件名，避免非法字符
           python crawler.py "${{ github.event.inputs.lesson_name }}" > data/"${{ steps.safe_filename.outputs.safe_name }}.md" || echo "爬取失败，生成默认笔记" > data/"${{ steps.safe_filename.outputs.safe_name }}.md"
 
-      - name: 提交并推送笔记文件
+      # ========== 修复核心：简化Git操作，解决推送冲突 ==========
+      - name: 提交并推送笔记文件（容错版）
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          git pull origin main --rebase
-          git add data/
-          git commit -m "生成课文笔记: ${{ github.event.inputs.lesson_name }}" || echo "无新内容需要提交"
-          git push origin main || echo "推送失败（可能无新内容）"
+          # 1. 暂存所有修改（解决未暂存变更问题）
+          git add .
+          # 2. 提交（无变更则跳过，不中断流程）
+          git commit -m "生成课文笔记: ${{ github.event.inputs.lesson_name }}" || echo "无新内容需要提交，跳过提交步骤"
+          # 3. 直接推送（去掉rebase，避免冲突）
+          git push origin main || echo "推送失败（可能无新内容或权限问题）"
