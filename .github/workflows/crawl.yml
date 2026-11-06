@@ -41,8 +41,11 @@ jobs:
           echo "safe_name=${SAFE_NAME}" >> $GITHUB_OUTPUT
 
       - name: 运行爬虫脚本生成笔记
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          python crawler.py "${{ github.event.inputs.lesson_name }}" > data/"${{ steps.safe_filename.outputs.safe_name }}.md" || echo "爬取失败，生成默认笔记" > data/"${{ steps.safe_filename.outputs.safe_name }}.md"
+          python crawler.py "${{ github.event.inputs.lesson_name }}"
+          test -f "data/${{ steps.safe_filename.outputs.safe_name }}.md" || echo "未生成笔记，跳过"
 
       # ========== 修复核心：简化Git操作，解决推送冲突 ==========
       - name: 提交并推送笔记文件（容错版）

@@ -187,6 +187,32 @@
             text-align: center;
         }
         
+        .lesson-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .lesson-item {
+            background: #f7f7ff;
+            border: 1px solid #ececf7;
+            border-radius: 12px;
+            padding: 14px 12px;
+            cursor: pointer;
+            text-align: center;
+            font-weight: 600;
+            color: #444;
+            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+        }
+        .lesson-item:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(102,126,234,.18); border-color: #c9c9f2; }
+        .lesson-item small { display: block; font-weight: 400; color: #999; margin-top: 4px; font-size: .76rem; }
+        .table-wrap { overflow-x: auto; margin: 12px 0; }
+        table.note-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+        table.note-table th, table.note-table td { border: 1px solid #e6e6e6; padding: 8px 10px; text-align: left; vertical-align: top; }
+        table.note-table th { background: #f5f5ff; }
+        .note-content ul, .note-content ol { margin: 8px 0 8px 22px; }
+        .note-content code { background: #f2f2f7; padding: 1px 5px; border-radius: 4px; }
+
         @media (max-width: 600px) {
             .input-group {
                 flex-direction: column;
@@ -201,9 +227,15 @@
     <div class="container">
         <header>
             <h1>🕷️ 语文笔记生成器 · AI智能版</h1>
-            <p>每次点击都重新爬取 + AI 重新生成 | 无缓存 | 强制刷新</p>
+            <p>点「已收课文」直接读；输入新课名可重新爬取生成（需配置 Token）</p>
         </header>
-        
+
+        <div class="search-card">
+            <h3 style="margin-bottom: 6px;">📚 已收课文</h3>
+            <p style="color: #888; font-size: .9rem; margin-bottom: 4px;">点开即读，不需要 Token。下面是 data/ 里已有的笔记。</p>
+            <div class="lesson-grid" id="lessonGrid"></div>
+        </div>
+
         <div class="search-card">
             <div class="input-group">
                 <input type="text" id="lessonName" placeholder="输入课文名称，例如：海底世界" />
@@ -388,36 +420,110 @@
             return null;
         }
         
-        function displayNote(note) {
-            // 简单 Markdown 转 HTML
-            let html = note
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/\n/g, '<br>')
-                .replace(/^# (.*$)/gm, '<h1 style="font-size: 1.8rem; margin: 20px 0 10px; color: #333;">$1</h1>')
-                .replace(/^## (.*$)/gm, '<h2 style="font-size: 1.4rem; margin: 15px 0 10px; color: #555;">$1</h2>')
-                .replace(/^### (.*$)/gm, '<h3 style="font-size: 1.2rem; margin: 12px 0 8px; color: #667eea;">$1</h3>')
-                .replace(/^#### (.*$)/gm, '<h4 style="font-size: 1.1rem; margin: 10px 0 5px; color: #764ba2;">$1</h4>')
-                .replace(/^---$/gm, '<hr style="margin: 20px 0;">')
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/^> (.*$)/gm, '<blockquote style="border-left: 4px solid #667eea; padding-left: 15px; margin: 10px 0; color: #666;">$1</blockquote>')
-                .replace(/\|/g, '|');
-            
-            // 简单处理表格
-            html = html.replace(/\|(.+)\|/g, function(match) {
-                let cells = match.split('|').filter(c => c.trim());
-                if (cells.length > 1) {
-                    return '<div style="display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee;">' + 
-                           cells.map(cell => '<span style="flex: 1;">' + cell.trim() + '</span>').join('') + 
-                           '</div>';
+        const LESSONS = ["燕子", "荷花", "赵州桥", "蜜蜂", "我们奇妙的世界", "火烧云", "海底世界"];
+
+        // 轻量 Markdown 渲染（标题/表格/列表/引用/加粗/代码）
+        function renderMarkdown(md) {
+            const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const inline = s => esc(s)
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+            const lines = md.replace(/\r/g, '').split('\n');
+            const out = [];
+            let i = 0, para = [];
+            const flush = () => { if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; } };
+
+            while (i < lines.length) {
+                const t = lines[i].trim();
+                if (!t) { flush(); i++; continue; }
+                if (t === '---') { flush(); out.push('<hr style="border:0;border-top:1px solid #eee;margin:18px 0">'); i++; continue; }
+
+                let m;
+                if ((m = /^(#{1,4})\s+(.*)$/.exec(t))) {
+                    flush();
+                    const lv = m[1].length;
+                    out.push(`<h${lv} style="margin:${lv === 1 ? 18 : 14}px 0 8px;color:#333">${inline(m[2])}</h${lv}>`);
+                    i++; continue;
                 }
-                return match;
-            });
-            
-            document.getElementById('noteContent').innerHTML = html;
+
+                if (/^\|/.test(t) && /^\|[\s:|-]+\|$/.test((lines[i + 1] || '').trim())) {
+                    flush();
+                    const cells = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+                    const head = cells(t);
+                    i += 2;
+                    const rows = [];
+                    while (i < lines.length && /^\|/.test(lines[i].trim())) { rows.push(cells(lines[i])); i++; }
+                    out.push('<div class="table-wrap"><table class="note-table"><thead><tr>' +
+                        head.map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>' +
+                        rows.map(r => '<tr>' + r.map(c => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') +
+                        '</tbody></table></div>');
+                    continue;
+                }
+
+                if (t.startsWith('>')) {
+                    flush();
+                    const buf = [];
+                    while (i < lines.length && lines[i].trim().startsWith('>')) {
+                        buf.push(lines[i].trim().replace(/^>\s?/, ''));
+                        i++;
+                    }
+                    out.push('<blockquote style="border-left:4px solid #667eea;padding:2px 14px;margin:12px 0;color:#666">' + inline(buf.join(' ')) + '</blockquote>');
+                    continue;
+                }
+
+                if (/^[-*]\s+/.test(t) || /^\d+\.\s+/.test(t)) {
+                    flush();
+                    const ordered = /^\d+\.\s+/.test(t);
+                    const items = [];
+                    while (i < lines.length && (/^[-*]\s+/.test(lines[i].trim()) || /^\d+\.\s+/.test(lines[i].trim()))) {
+                        items.push(lines[i].trim().replace(/^([-*]|\d+\.)\s+/, ''));
+                        i++;
+                    }
+                    const tag = ordered ? 'ol' : 'ul';
+                    out.push(`<${tag}>` + items.map(x => `<li>${inline(x)}</li>`).join('') + `</${tag}>`);
+                    continue;
+                }
+
+                para.push(t);
+                i++;
+            }
+            flush();
+            return out.join('\n');
+        }
+
+        function displayNote(note) {
+            document.getElementById('noteContent').innerHTML = renderMarkdown(note);
             document.getElementById('resultCard').style.display = 'block';
+            document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function rawNoteUrl(name) {
+            return `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/data/${encodeURIComponent(name)}.md?t=${getTimestamp()}`;
+        }
+
+        function renderLessonList() {
+            document.getElementById('lessonGrid').innerHTML = LESSONS
+                .map(name => `<div class="lesson-item" onclick="openLesson('${name}')">${name}<small>点击阅读</small></div>`)
+                .join('');
+        }
+
+        async function openLesson(name) {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loadingText').innerHTML = `📖 正在加载《${name}》...`;
+            document.getElementById('progressInfo').innerHTML = '';
+            document.getElementById('errorCard').style.display = 'none';
+            try {
+                const res = await fetch(rawNoteUrl(name), { cache: 'no-cache' });
+                if (!res.ok) throw new Error(`没有找到这篇笔记（HTTP ${res.status}）`);
+                displayNote(await res.text());
+            } catch (e) {
+                document.getElementById('errorCard').innerHTML = `❌ ${e.message}`;
+                document.getElementById('errorCard').style.display = 'block';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
         }
         
         function copyNote() {
@@ -432,6 +538,7 @@
         });
         
         // 页面加载检查
+        renderLessonList();
         checkTokenStatus();
         console.log('📚 语文笔记生成器已加载（强制重新生成模式）');
         console.log('💡 每次点击都会重新爬取 + AI 重新生成，不使用任何缓存');
