@@ -499,8 +499,22 @@
             document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
-        function rawNoteUrl(name) {
-            return `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/data/${encodeURIComponent(name)}.md?t=${getTimestamp()}`;
+        // 同源优先（Pages 可直接取 data/ 下的文件），CDN 与 raw 作为备用
+        async function fetchNote(name) {
+            const ts = getTimestamp();
+            const file = encodeURIComponent(name) + ".md";
+            const sources = [
+                `data/${file}?t=${ts}`,
+                `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@main/data/${file}?t=${ts}`,
+                `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/data/${file}?t=${ts}`
+            ];
+            for (const url of sources) {
+                try {
+                    const res = await fetch(url, { cache: 'no-cache' });
+                    if (res.ok) return await res.text();
+                } catch (e) { /* 换下一个源 */ }
+            }
+            throw new Error(`《${name}》加载失败，三个数据源都不可达`);
         }
 
         function renderLessonList() {
@@ -515,9 +529,7 @@
             document.getElementById('progressInfo').innerHTML = '';
             document.getElementById('errorCard').style.display = 'none';
             try {
-                const res = await fetch(rawNoteUrl(name), { cache: 'no-cache' });
-                if (!res.ok) throw new Error(`没有找到这篇笔记（HTTP ${res.status}）`);
-                displayNote(await res.text());
+                displayNote(await fetchNote(name));
             } catch (e) {
                 document.getElementById('errorCard').innerHTML = `❌ ${e.message}`;
                 document.getElementById('errorCard').style.display = 'block';
