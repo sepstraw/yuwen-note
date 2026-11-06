@@ -233,7 +233,7 @@
         <div class="search-card">
             <h3 style="margin-bottom: 6px;">📚 已收课文</h3>
             <p style="color: #888; font-size: .9rem; margin-bottom: 4px;">点开即读，不需要 Token。下面是 data/ 里已有的笔记。</p>
-            <div class="lesson-grid" id="lessonGrid"></div>
+            <div id="lessonGroups"></div>
         </div>
 
         <div class="search-card">
@@ -420,7 +420,21 @@
             return null;
         }
         
-        const LESSONS = ["燕子", "荷花", "赵州桥", "蜜蜂", "我们奇妙的世界", "火烧云", "海底世界"];
+        const GROUPS = [
+            {
+                title: "三年级上册",
+                lessons: [
+                    "大青树下的小学", "花的学校", "不懂就要问", "铺满金色巴掌的水泥道", "秋天的雨", "听听，秋的声音",
+                    "卖火柴的小女孩", "那一定会很好", "在牛肚子里旅行", "一块奶酪", "总也倒不了的老屋", "胡萝卜先生的长胡子",
+                    "小狗学叫", "搭船的鸟", "金色的草地", "富饶的西沙群岛", "海滨小城", "美丽的小兴安岭",
+                    "大自然的声音", "读不完的大书", "父亲、树林和鸟", "司马光", "灰雀", "手术台就是阵地"
+                ]
+            },
+            {
+                title: "三年级下册",
+                lessons: ["燕子", "荷花", "赵州桥", "蜜蜂", "我们奇妙的世界", "火烧云", "海底世界"]
+            }
+        ];
 
         // 轻量 Markdown 渲染（标题/表格/列表/引用/加粗/代码）
         function renderMarkdown(md) {
@@ -518,9 +532,14 @@
         }
 
         function renderLessonList() {
-            document.getElementById('lessonGrid').innerHTML = LESSONS
-                .map(name => `<div class="lesson-item" onclick="openLesson('${name}')">${name}<small>点击阅读</small></div>`)
-                .join('');
+            document.getElementById('lessonGroups').innerHTML = GROUPS.map(g => `
+                <h4 style="margin: 18px 0 2px; color: #555; font-size: .95rem;">${g.title}
+                    <span style="color: #aaa; font-weight: 400; font-size: .85rem;">· ${g.lessons.length} 篇</span>
+                </h4>
+                <div class="lesson-grid">${g.lessons.map(n =>
+                    `<div class="lesson-item" onclick="openLesson('${n}')">${n}<small>点击阅读</small></div>`
+                ).join('')}</div>
+            `).join('');
         }
 
         async function openLesson(name) {
